@@ -2,9 +2,9 @@
 # Swagger UI: http://localhost:5000/swagger
 
 
-from flask import Flask, request, jsonify, send_from_directory, abort, render_template_string
-from werkzeug.utils import secure_filename
-from werkzeug.exceptions import RequestEntityTooLarge
+from flask import Flask, request, jsonify, send_from_directory, abort, render_template_string # type: ignore
+from werkzeug.utils import secure_filename # type: ignore
+from werkzeug.exceptions import RequestEntityTooLarge # type: ignore
 from pathlib import Path
 import os, json, time
 
