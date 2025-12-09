@@ -1,0 +1,14 @@
+entryPoints:
+  http:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: monitoring-net
+
+api:
+  dashboard: true
+  insecure: true

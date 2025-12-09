@@ -1,8 +1,35 @@
--- Entrar no ambiente virtual -- 
-source /home/henrique/ITI/venv/bin/activate
+--------------------------------------------------------------------------
+                            ORACLE VIRTUAL BOX 
+--------------------------------------------------------------------------
+
+SSH SERVER 
+
+Definições -> Avançado -> Rede -> Ligado a: NAT -> Encaminhamento de Porta -> Tabela
+
+NOME | PROTOCOLO | IP do Anfitriao | Porta do Anfitriao | IP do Convidado | Porta do Convidado
+Rule1|TCP	 |		   |	   8000		|		  | 8000
+SSH  |TCP	 |		   |       2122		|		  | 22
 
 
-----------NUM TERMINAL AO LADO ----------
+INSTALL: sudo apt-get install openssh-server
+	 sudo service ssh status 
+			  start 	
+			  stop 
+			  restart
+
+VSCODE: ssh user@IP -p 2122
+
+
+--------------------------------------------------------------------------
+                         1 Fase - UMDrive Local
+--------------------------------------------------------------------------
+--Iniciar UMDrive--
+cd ITI
+cd umdrive
+source /home/henrique/ITI/venv/bin/activate (Entrar no ambiente virtual)
+python umdrive.py -> Ir ao 127.0.0.1:5000/ui para aceder a CRUD na interface da UMDrive
+
+----------OU CRUD ATRAVES DO TERMINAL----------
 
 -- Fazer upload de um ficheiro -- (Substitui o caminho (o que esta em "") pelo ficheiro que quiseres enviar. O caminho deve tem de ser o da Maquina Virtual)
 curl -F "file=@/home/henrique/teste.txt" http://localhost:5000/api/files
@@ -25,3 +52,192 @@ curl -X DELETE http://localhost:5000/api/files/teste.txt
     curl -H "Content-Type: application/json" \
         -d '{"autor":"Henrique","tags":["exemplo"]}' \
         -X POST http://localhost:5000/api/files/teste.txt/metadata
+
+--------------------------------------------------------------------------
+                         2 Fase - Ligação entre VMs
+--------------------------------------------------------------------------
+
+FAZER SEMPRE ISTO A BAIXO AO INICIAR 
+
+--Atribuir IP a maquina virtual--
+sudo ip addr add 192.168.50.10/24 dev enp0s8 ITI Armazenamento
+sudo ip addr add 192.168.50.11/24 dev enp0s8 ITI Ubuntu (UMDrive)
+
+--Mostrar IP da maquina virtual--
+ip a show enp0s8
+
+Resultado: inet 192.168.50.11/24 scope global enp0s8
+                valid_lft forever preferred_lft forever
+
+--Testar Ligação-- 
+ping 192.168.50.10
+
+-- Direcionar ficheiros para a ITI Armazenamento --
+sudo mount 192.168.50.10:/srv/umdrive_storage /home/henrique/ITI/storage
+
+
+--Iniciar UMDrive--
+cd ITI
+cd umdrive
+source /home/henrique/ITI/venv/bin/activate (Entrar no ambiente virtual)
+python umdrive.py -> Ir ao 127.0.0.1:5000/ui para aceder a CRUD na interface da UMDrive
+
+
+--------------------------------------------------------------------------
+                   3 Fase - Docker (UMDrive em Container)
+--------------------------------------------------------------------------
+
+FAZER SEMPRE ISTO AO INICIAR A MAQUINA
+
+-- 1️ Atribuir IPs às máquinas virtuais --
+sudo ip addr add 192.168.50.10/24 dev enp0s8     # ITI Armazenamento
+sudo ip addr add 192.168.50.11/24 dev enp0s8     # ITI Ubuntu (UMDrive)
+
+-- 2️ Testar ligação entre as VMs --
+ping 192.168.50.10
+
+-- 3️ Montar o diretório remoto (NFS da ITI Armazenamento) --
+sudo mount 192.168.50.10:/srv/umdrive_storage /home/henrique/ITI/umdrive/storage
+
+-- 4️ Confirmar que o NFS foi montado corretamente --
+df -h /home/henrique/ITI/storage
+# Deve aparecer algo como:
+# 192.168.50.10:/srv/umdrive_storage ... /home/henrique/ITI/storage
+
+-- 5️ Iniciar o Docker e o container do UMDrive --
+sudo systemctl start docker
+docker start umdrive
+
+-- 6️ Verificar se o container está ativo --
+docker ps
+# Deve aparecer algo como:
+# CONTAINER ID   IMAGE     COMMAND                STATUS         PORTS                    NAMES
+# abcd1234       umdrive   "python umdrive.py"    Up 2 minutes   0.0.0.0:5000->5000/tcp   umdrive
+
+-- 7️ Aceder ao UMDrive --
+Abrir no navegador: http://localhost:5000/ui
+
+--------------------------------------------------------------------------
+
+# CASO PRECISES DE RECRIAR O CONTAINER 
+
+-- Entrar na pasta do projeto --
+cd /home/henrique/ITI/umdrive
+
+-- Reconstruir a imagem Docker --
+docker build -t umdrive .
+
+-- (Re)criar o container --
+docker rm -f umdrive
+docker run -d \
+  --name umdrive \
+  -p 5000:5000 \
+  -v /home/henrique/ITI/storage:/app/storage \
+  umdrive
+
+-- Confirmar --
+docker ps
+
+
+------------------------------
+💡 Dica opcional:
+Para não teres de montar e iniciar manualmente sempre que ligas a máquina, podes automatizar:
+
+sudo crontab -e
+
+
+e adiciona no fim:
+
+@reboot ip addr add 192.168.50.11/24 dev enp0s8
+@reboot sudo mount 192.168.50.10:/srv/umdrive_storage /home/henrique/ITI/storage
+@reboot systemctl start docker
+@reboot docker start umdrive
+
+
+Assim, tudo arranca sozinho ao iniciar a VM 
+
+---------------------------
+
+
+-- Meter IP automatico para a maquina --  
+
+sudo nano /etc/netplan/01-netcfg.yaml
+
+network:
+  version: 2
+  renderer: NetworkManager
+  ethernets:
+    enp0s8:
+      dhcp4: no
+      addresses:
+        - 192.168.50.10/24
+
+depois disso meter 
+  sudo netplan apply
+
+
+-----------------
+1. INICIAR A VM III ARMAZENAMENTO 
+2. DEPOIS A ITI UBUNTU 
+3. ESPERAR 10 SEGUNDOS PARA ABRIR O UMDRIVE 
+
+-> comandos importantes docker <-
+
+- estado do container
+  docker ps
+
+- restart do container
+  docker restart umdrive
+
+-mostra servidor flask do docker 
+  docker logs umdrive
+
+
+-ver o sistema de ficheiros 
+  df -h /home/henrique/ITI/storage
+
+- ver permissoes da diretoria
+  ls -ld /home/henrique/ITI/storage
+
+
+SEMPRE QUE MUDAR ALGUMA COISA NO CODIGO 
+docker restart umdrive
+
+
+REINICIAR DOCKER COMPOSE
+sudo mount 192.168.50.10:/srv/umdrive_storage /home/henrique/ITI/umdrive/storage
+docker-compose down --remove-orphans
+docker-compose up -d --build
+
+
+INICIAR DOCKER-COMPOSE !!!! ESPERA ATE A PASTA STORAGE ESTAR CONECTADA
+docker-compose up 
+
+
+
+
+
+compose 
+  services 
+    umdrive (APP em Flask)
+    cadvisor (coletar e disp metricas dos coitainers. ex: cpu, mem)
+    prometheus (gestor de metricas)
+    grafana (visual data)
+    traefik 
+
+
+Escalar estaticamente o servico umdrive
+docker-compose up --scale umdrive=3 -d
+
+Ver o log de cada instancia do umdrive
+docker logs umdrive_umdrive_1
+
+docker logs -f umdrive_umdrive_1
+
+
+-- LINKS --
+  umdrive.localhost
+  grafana.localhost
+  prometheus.localhost
+  cadvisor.localhost
+  traefik.localhost:9091

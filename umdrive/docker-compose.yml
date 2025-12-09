@@ -1,0 +1,93 @@
+version: "3.8"
+
+services:
+
+  # ============================
+  # 🔵 TRAEFIK (Reverse Proxy)
+  # ============================
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - "--api.insecure=true"            # Dashboard ativo
+      - "--providers.docker=true"        # Lê labels dos containers
+      - "--entrypoints.web.address=:80"  # Entrada HTTP
+    ports:
+      - "80:80"          # Entrada HTTP para serviços
+      - "9091:8080"      # Dashboard -> 8080 interno → 9091 externo
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: always
+
+
+  # ============================
+  # 🔵 UMDRIVE (Flask API)
+  # ============================
+  umdrive:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    volumes:
+      - ./:/app
+      - /home/henrique/ITI/umdrive/storage:/app/umdrive/storage
+    working_dir: /app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.umdrive.rule=Host(`umdrive.localhost`)"
+      - "traefik.http.services.umdrive.loadbalancer.server.port=5000"
+    restart: always
+
+  # ============================
+  # 🔵 cADVISOR
+  # ============================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cadvisor.rule=Host(`cadvisor.localhost`)"
+      - "traefik.http.services.cadvisor.loadbalancer.server.port=8080"
+    restart: always
+
+  # ============================
+  # 🔵 PROMETHEUS
+  # ============================
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.localhost`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+    restart: always
+    depends_on:
+      - cadvisor
+
+  # ============================
+  # 🔵 GRAFANA
+  # ============================
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana-data:/var/lib/grafana
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.localhost`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    restart: always
+    depends_on:
+      - prometheus
