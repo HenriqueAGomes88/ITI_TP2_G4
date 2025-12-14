@@ -140,7 +140,6 @@ docker ps
 
 
 ------------------------------
-💡 Dica opcional:
 Para não teres de montar e iniciar manualmente sempre que ligas a máquina, podes automatizar:
 
 sudo crontab -e
